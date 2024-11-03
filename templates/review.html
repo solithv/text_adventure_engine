@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ scenario.title }} - バックログ</h1>
+<div class="timeline">
+    {% for selection in selection_history %}
+    <div class="timeline-item">
+        <!-- <div class="timestamp">シーン {{ selection.scene_id }}</div> -->
+        {% if selection.image %}
+        <img src="{{ selection.image }}" alt="Scene Image" class="scene-image">
+        {% endif %}
+        <div class="scene-text">{{ selection.scene_text }}</div>
+        <div class="selection-made">{{ selection.selection_text }}</div>
+    </div>
+    {% endfor %}
+
+    <div class="timeline-item">
+        <!-- <div class="timestamp">シーン {{ ending.scene_id }}</div> -->
+        {% if ending.image %}
+        <img src="{{ ending.image }}" alt="Scene Image" class="scene-image">
+        {% endif %}
+        <div class="scene-text">{{ ending.text }}</div>
+    </div>
+</div>
+<div class="scenario-actions" style="text-align: center;">
+    <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">もう一度プレイ</a>
+    <a href="{{ url_for('scenario_list') }}" class="button">シナリオ一覧へ</a>
+</div>
+{% endblock %}

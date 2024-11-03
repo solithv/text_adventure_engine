@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>シナリオ一覧</h1>
+<div class="scenarios">
+    {% for scenario in scenarios %}
+    <div class="scenario-card">
+        <div class="scenario-info">
+            <h2>{{ scenario.title }}</h2>
+            <div>--</div>
+            {% if scenario.is_completed %}
+            <div class="status-badge completed">完了済み</div>
+            {% elif scenario.current_scene_id %}
+            <div class="status-badge in-progress">進行中</div>
+            {% else %}
+            <div class="status-badge new">未プレイ</div>
+            {% endif %}
+        </div>
+        <p>{{ scenario.description }}</p>
+        <div class="scenario-actions">
+            {% if scenario.is_completed %}
+            <a href="{{ url_for('show_review', scenario_id=scenario.id) }}" class="button">振り返る</a>
+            <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">もう一度プレイ</a>
+            {% elif scenario.current_scene_id %}
+            <a href="{{ url_for('play_scenario', scenario_id=scenario.id) }}" class="button">続きから</a>
+            <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">最初から</a>
+            {% else %}
+            <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">プレイ開始</a>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

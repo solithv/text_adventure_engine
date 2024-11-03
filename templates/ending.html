@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ scene.scenario_title }}- エンディング</h1>
+<div class="scene-content">
+    {% if scene.image %}
+    <img src="{{ scene.image }}" alt="Scene Image" class="scene-image">
+    {% endif %}
+
+    <div class="scene-text">
+        {{ scene.text }}
+    </div>
+
+    <div class="selections">
+        {% for selection in selections %}
+        <form method="POST"
+            action="{{ url_for('make_selection', scenario_id=scenario_id, selection_id=selection.id) }}">
+            <button type="submit" class="selection-button">{{ selection.text }}</button>
+        </form>
+        {% endfor %}
+    </div>
+
+    <div class="scenario-actions">
+        <a href="{{ url_for('show_review', scenario_id=scene.scenario_id) }}" class="button">振り返る</a>
+    </div>
+</div>
+{% endblock %}
