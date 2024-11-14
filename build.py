@@ -11,6 +11,8 @@ def build_exe():
             "flask",
             "--hidden-import",
             "python-dotenv",
+            "--hidden-import",
+            "jsonschema",
             "--name",
             "text_adventure_engine",
             "--add-data",

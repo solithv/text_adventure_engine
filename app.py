@@ -20,6 +20,7 @@ from flask import (
     session,
     url_for,
 )
+from jsonschema import validate
 from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
@@ -211,8 +212,53 @@ def register_from_csv(db: sqlite3.Connection, csv_file: str):
             )
 
 
+def validate_json(data):
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "scenes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "number"},
+                        "text": {"type": "string"},
+                        "image": {"type": "string"},
+                        "end": {"type": "boolean"},
+                        "selection": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "nextId": {"type": "number"},
+                                    "nextIds": {
+                                        "type": "array",
+                                        "items": {"type": "number"},
+                                    },
+                                    "text": {"type": "string"},
+                                },
+                                "required": ["text"],
+                                "oneOf": [
+                                    {"required": ["nextId"]},
+                                    {"required": ["nextIds"]},
+                                ],
+                            },
+                        },
+                    },
+                    "required": ["id", "text", "selection"],
+                },
+            },
+        },
+        "required": ["title", "description", "scenes"],
+    }
+    validate(instance=data, schema=schema)
+
+
 @transact(args.database)
 def import_scenario(db: sqlite3.Connection, scenario_data):
+    validate_json(scenario_data)
     cursor = db.cursor()
 
     # 既存のシーンと選択肢を削除
@@ -269,7 +315,7 @@ def import_scenario(db: sqlite3.Connection, scenario_data):
                 (scene_id, dict(selection).get("nextId"), selection["text"]),
             )
             selection_id = cursor.lastrowid
-            for random_selection in selection.get("nextIds", []):
+            for random_selection in dict(selection).get("nextIds", []):
                 cursor.execute(
                     "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
                     (selection_id, random_selection),
