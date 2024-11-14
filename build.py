@@ -6,18 +6,17 @@ def build_exe():
         [
             "app.py",
             "--onefile",
-            "--add-data",
-            "templates:templates",
-            "--add-data",
-            "static:static",
-            "--add-data",
-            ".env:.env",
+            "--clean",
             "--hidden-import",
             "flask",
             "--hidden-import",
             "python-dotenv",
             "--name",
             "text_adventure_engine",
+            "--add-data",
+            "templates:templates",
+            "--add-data",
+            "static:static",
         ]
     )
 

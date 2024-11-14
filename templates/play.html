@@ -3,7 +3,7 @@
 <h1>{{ scene.scenario_title }}</h1>
 <div class="scene-content">
     {% if scene.image %}
-    <img src="{{ scene.image }}" alt="Scene Image" class="scene-image">
+    <img src="{{ url_for('send_image', path=scene.image) }}" alt="Scene Image" class="scene-image">
     {% endif %}
 
     <div class="scene-text">

@@ -12,7 +12,9 @@
     </div>
     <button type="submit" class="button">ログイン</button>
 </form>
+{% if registrable %}
 <p style="text-align: center; margin-top: 20px;">
     アカウントをお持ちでない方は<a href="{{ url_for('register') }}">こちら</a>
 </p>
+{% endif %}
 {% endblock %}
