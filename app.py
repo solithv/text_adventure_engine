@@ -25,7 +25,7 @@ def get_db():
 
 
 def init_db():
-    with get_db() as db:
+    with db:
         # ユーザーテーブル
         db.execute(
             """
@@ -130,36 +130,42 @@ def login_required(f):
 
 
 def import_scenario(scenario_data):
-    with get_db() as db:
-        # シナリオの登録
+    with db:
         cursor = db.cursor()
-        scenario = cursor.execute(
-            "INSERT OR REPLACE INTO scenarios (title, description) VALUES (?, ?) RETURNING id",
-            (scenario_data["title"], scenario_data["description"]),
-        ).fetchone()
-        scenario_id = scenario["id"]
 
         # 既存のシーンと選択肢を削除
-        cursor.execute(
-            """
-            DELETE FROM random_selections WHERE selection_id IN
-            (
-                SELECT sel.id
-                FROM selections sel
-                JOIN scenes sc ON sel.scene_id = sc.id
-                WHERE sc.scenario_id = ?
+        existing_scenario = cursor.execute(
+            "SELECT id FROM scenarios WHERE title = ?", (scenario_data["title"],)
+        ).fetchone()
+        if existing_scenario:
+            cursor.execute(
+                """
+                DELETE FROM random_selections WHERE selection_id IN
+                (
+                    SELECT sel.id
+                    FROM selections sel
+                    JOIN scenes sc ON sel.scene_id = sc.id
+                    WHERE sc.scenario_id = ?
+                )
+                """,
+                (existing_scenario["id"],),
             )
-            """,
-            (scenario_id,),
-        )
-        cursor.execute(
-            """
-            DELETE FROM selections WHERE scene_id IN
-            (SELECT id FROM scenes WHERE scenario_id = ?)
-            """,
-            (scenario_id,),
-        )
-        cursor.execute("DELETE FROM scenes WHERE scenario_id = ?", (scenario_id,))
+            cursor.execute(
+                """
+                DELETE FROM selections WHERE scene_id IN
+                (SELECT id FROM scenes WHERE scenario_id = ?)
+                """,
+                (existing_scenario["id"],),
+            )
+            cursor.execute(
+                "DELETE FROM scenes WHERE scenario_id = ?", (existing_scenario["id"],)
+            )
+
+        # シナリオの登録
+        scenario_id = cursor.execute(
+            "INSERT OR REPLACE INTO scenarios (title, description) VALUES (?, ?) RETURNING id",
+            (scenario_data["title"], scenario_data["description"]),
+        ).fetchone()["id"]
 
         # シーンと選択肢の登録
         for scene in scenario_data["scenes"]:
@@ -176,22 +182,17 @@ def import_scenario(scenario_data):
             scene_id = cursor.lastrowid
 
             for selection in scene.get("selection", []):
-                if selection.get("nextId"):
+                cursor.execute(
+                    "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
+                    (scene_id, dict(selection).get("nextId"), selection["text"]),
+                )
+                selection_id = cursor.lastrowid
+                for random_selection in selection.get("nextIds", []):
                     cursor.execute(
-                        "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
-                        (scene_id, selection["nextId"], selection["text"]),
+                        "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
+                        (selection_id, random_selection),
                     )
-                else:
-                    cursor.execute(
-                        "INSERT INTO selections (scene_id, text) VALUES (?, ?)",
-                        (scene_id, selection["text"]),
-                    )
-                    selection_id = cursor.lastrowid
-                    for random_selection in selection.get("nextIds", []):
-                        cursor.execute(
-                            "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
-                            (selection_id, random_selection),
-                        )
+        cursor.close()
 
 
 @app.route("/")
@@ -207,7 +208,7 @@ def register():
         username = request.form["username"]
         password = request.form["password"]
 
-        with get_db() as db:
+        with db:
             try:
                 db.execute(
                     "INSERT INTO users (username, password) VALUES (?, ?)",
@@ -227,7 +228,7 @@ def login():
         username = request.form["username"]
         password = request.form["password"]
 
-        with get_db() as db:
+        with db:
             user = db.execute(
                 "SELECT * FROM users WHERE username = ?", (username,)
             ).fetchone()
@@ -250,7 +251,7 @@ def logout():
 @app.route("/scenarios")
 @login_required
 def scenario_list():
-    with get_db() as db:
+    with db:
         scenarios = db.execute(
             """
             SELECT s.*, ph.current_scene_id, ph.is_completed,
@@ -267,7 +268,7 @@ def scenario_list():
 @app.route("/play/<int:scenario_id>/start")
 @login_required
 def start_scenario(scenario_id):
-    with get_db() as db:
+    with db:
         # 最初のシーンを取得
         first_scene = db.execute(
             """
@@ -318,7 +319,7 @@ def start_scenario(scenario_id):
 @app.route("/play/<int:scenario_id>")
 @login_required
 def play_scenario(scenario_id):
-    with get_db() as db:
+    with db:
         # プレイ履歴を取得
         play_history = db.execute(
             """
@@ -356,7 +357,7 @@ def play_scenario(scenario_id):
 @app.route("/play/<int:scenario_id>/select/<int:selection_id>", methods=["POST"])
 @login_required
 def make_selection(scenario_id, selection_id):
-    with get_db() as db:
+    with db:
         # 選択肢の情報を取得
         selection = db.execute(
             """
@@ -430,7 +431,7 @@ def make_selection(scenario_id, selection_id):
 @app.route("/play/<int:scenario_id>/ending")
 @login_required
 def show_ending(scenario_id):
-    with get_db() as db:
+    with db:
         # プレイ履歴を取得
         play_history = db.execute(
             """
@@ -471,7 +472,7 @@ def show_ending(scenario_id):
 @app.route("/play/<int:scenario_id>/review")
 @login_required
 def show_review(scenario_id):
-    with get_db() as db:
+    with db:
         # シナリオ情報を取得
         scenario = db.execute(
             "SELECT * FROM scenarios WHERE id = ?",
@@ -518,16 +519,22 @@ def show_review(scenario_id):
     )
 
 
-if __name__ == "__main__":
-    init_db()
-    if len(sys.argv) > 1:
-        for arg in sys.argv[1:]:
-            try:
-                with open(arg, "r", encoding="utf-8") as f:
-                    scenario_data = json.load(f)
-                    import_scenario(scenario_data)
-                print(f"Imported scenario: {scenario_data['title']}")
-            except Exception:
-                print(f"Import scenario failed: {arg}")
+db = get_db()
 
-    app.run(host="0.0.0.0", port=port, debug=debug)
+
+if __name__ == "__main__":
+    try:
+        init_db()
+        if len(sys.argv) > 1:
+            for arg in sys.argv[1:]:
+                try:
+                    with open(arg, "r", encoding="utf-8") as f:
+                        scenario_data = json.load(f)
+                        import_scenario(scenario_data)
+                    print(f"Imported scenario: {scenario_data['title']}")
+                except Exception:
+                    print(f"Import scenario failed: {arg}")
+
+        app.run(host="0.0.0.0", port=port, debug=debug)
+    finally:
+        db.close()
