@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import sqlite3
 import sys
 from functools import wraps
@@ -28,81 +29,93 @@ def init_db():
         # ユーザーテーブル
         db.execute(
             """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
-        )
-        """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            )
+            """
         )
 
         # シナリオテーブル
         db.execute(
             """
-        CREATE TABLE IF NOT EXISTS scenarios (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT UNIQUE NOT NULL,
-            description TEXT NOT NULL
-        )
-        """
+            CREATE TABLE IF NOT EXISTS scenarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT UNIQUE NOT NULL,
+                description TEXT NOT NULL
+            )
+            """
         )
 
         # シーンテーブル
         db.execute(
             """
-        CREATE TABLE IF NOT EXISTS scenes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scenario_id INTEGER NOT NULL,
-            scene_id INTEGER NOT NULL,
-            text TEXT NOT NULL,
-            image TEXT,
-            is_end BOOLEAN NOT NULL,
-            FOREIGN KEY (scenario_id) REFERENCES scenarios (id)
-        )
-        """
+            CREATE TABLE IF NOT EXISTS scenes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scenario_id INTEGER NOT NULL,
+                scene_id INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                image TEXT,
+                is_end BOOLEAN NOT NULL,
+                FOREIGN KEY (scenario_id) REFERENCES scenarios (id)
+            )
+            """
         )
 
         # 選択肢テーブル
         db.execute(
             """
-        CREATE TABLE IF NOT EXISTS selections (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scene_id INTEGER NOT NULL,
-            next_id INTEGER NOT NULL,
-            text TEXT NOT NULL,
-            FOREIGN KEY (scene_id) REFERENCES scenes (id)
+            CREATE TABLE IF NOT EXISTS selections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scene_id INTEGER NOT NULL,
+                next_id INTEGER,
+                text TEXT NOT NULL,
+                FOREIGN KEY (scene_id) REFERENCES scenes (id)
+            )
+            """
         )
-        """
+
+        # ランダム選択肢テーブル
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS random_selections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                selection_id INTEGER NOT NULL,
+                next_id INTEGER NOT NULL,
+                FOREIGN KEY (selection_id) REFERENCES selections (id)
+            )
+            """
         )
 
         # プレイ履歴テーブル
         db.execute(
             """
-        CREATE TABLE IF NOT EXISTS play_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            scenario_id INTEGER NOT NULL,
-            current_scene_id INTEGER NOT NULL,
-            is_completed BOOLEAN NOT NULL DEFAULT 0,
-            FOREIGN KEY (user_id) REFERENCES users (id),
-            FOREIGN KEY (scenario_id) REFERENCES scenarios (id)
-        )
-        """
+            CREATE TABLE IF NOT EXISTS play_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                scenario_id INTEGER NOT NULL,
+                current_scene_id INTEGER NOT NULL,
+                is_completed BOOLEAN NOT NULL DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users (id),
+                FOREIGN KEY (scenario_id) REFERENCES scenarios (id)
+            )
+            """
         )
 
         # 選択履歴テーブル
         db.execute(
             """
-        CREATE TABLE IF NOT EXISTS selection_history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            play_history_id INTEGER NOT NULL,
-            scene_id INTEGER NOT NULL,
-            selection_id INTEGER NOT NULL,
-            FOREIGN KEY (play_history_id) REFERENCES play_history (id),
-            FOREIGN KEY (scene_id) REFERENCES scenes (id),
-            FOREIGN KEY (selection_id) REFERENCES selections (id)
-        )
-        """
+            CREATE TABLE IF NOT EXISTS selection_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                play_history_id INTEGER NOT NULL,
+                scene_id INTEGER NOT NULL,
+                selection_id INTEGER NOT NULL,
+                FOREIGN KEY (play_history_id) REFERENCES play_history (id),
+                FOREIGN KEY (scene_id) REFERENCES scenes (id),
+                FOREIGN KEY (selection_id) REFERENCES selections (id)
+            )
+            """
         )
 
 
@@ -120,16 +133,30 @@ def import_scenario(scenario_data):
     with get_db() as db:
         # シナリオの登録
         cursor = db.cursor()
-        cursor.execute(
-            "INSERT OR REPLACE INTO scenarios (title, description) VALUES (?, ?)",
+        scenario = cursor.execute(
+            "INSERT OR REPLACE INTO scenarios (title, description) VALUES (?, ?) RETURNING id",
             (scenario_data["title"], scenario_data["description"]),
-        )
-        scenario_id = cursor.lastrowid
+        ).fetchone()
+        scenario_id = scenario["id"]
 
         # 既存のシーンと選択肢を削除
         cursor.execute(
-            "DELETE FROM selections WHERE scene_id IN "
-            "(SELECT id FROM scenes WHERE scenario_id = ?)",
+            """
+            DELETE FROM random_selections WHERE selection_id IN
+            (
+                SELECT sel.id
+                FROM selections sel
+                JOIN scenes sc ON sel.scene_id = sc.id
+                WHERE sc.scenario_id = ?
+            )
+            """,
+            (scenario_id,),
+        )
+        cursor.execute(
+            """
+            DELETE FROM selections WHERE scene_id IN
+            (SELECT id FROM scenes WHERE scenario_id = ?)
+            """,
             (scenario_id,),
         )
         cursor.execute("DELETE FROM scenes WHERE scenario_id = ?", (scenario_id,))
@@ -149,10 +176,22 @@ def import_scenario(scenario_data):
             scene_id = cursor.lastrowid
 
             for selection in scene.get("selection", []):
-                cursor.execute(
-                    "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
-                    (scene_id, selection["nextId"], selection["text"]),
-                )
+                if selection.get("nextId"):
+                    cursor.execute(
+                        "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
+                        (scene_id, selection["nextId"], selection["text"]),
+                    )
+                else:
+                    cursor.execute(
+                        "INSERT INTO selections (scene_id, text) VALUES (?, ?)",
+                        (scene_id, selection["text"]),
+                    )
+                    selection_id = cursor.lastrowid
+                    for random_selection in selection.get("nextIds", []):
+                        cursor.execute(
+                            "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
+                            (selection_id, random_selection),
+                        )
 
 
 @app.route("/")
@@ -214,13 +253,11 @@ def scenario_list():
     with get_db() as db:
         scenarios = db.execute(
             """
-            SELECT s.*, 
-                   ph.current_scene_id,
-                   ph.is_completed,
-                   (SELECT scene_id FROM scenes WHERE scenario_id = s.id ORDER BY scene_id LIMIT 1) as first_scene_id
+            SELECT s.*, ph.current_scene_id, ph.is_completed,
+                (SELECT scene_id FROM scenes WHERE scenario_id = s.id ORDER BY scene_id LIMIT 1) as first_scene_id
             FROM scenarios s
             LEFT JOIN play_history ph ON s.id = ph.scenario_id AND ph.user_id = ?
-        """,
+            """,
             (session["user_id"],),
         ).fetchall()
 
@@ -234,12 +271,12 @@ def start_scenario(scenario_id):
         # 最初のシーンを取得
         first_scene = db.execute(
             """
-            SELECT scene_id 
-            FROM scenes 
-            WHERE scenario_id = ? 
-            ORDER BY scene_id 
+            SELECT scene_id
+            FROM scenes
+            WHERE scenario_id = ?
+            ORDER BY scene_id
             LIMIT 1
-        """,
+            """,
             (scenario_id,),
         ).fetchone()
 
@@ -250,19 +287,19 @@ def start_scenario(scenario_id):
         # 既存のプレイ履歴を削除
         db.execute(
             """
-            DELETE FROM selection_history 
+            DELETE FROM selection_history
             WHERE play_history_id IN (
-                SELECT id FROM play_history 
+                SELECT id FROM play_history
                 WHERE user_id = ? AND scenario_id = ?
             )
-        """,
+            """,
             (session["user_id"], scenario_id),
         )
         db.execute(
             """
-            DELETE FROM play_history 
+            DELETE FROM play_history
             WHERE user_id = ? AND scenario_id = ?
-        """,
+            """,
             (session["user_id"], scenario_id),
         )
 
@@ -271,7 +308,7 @@ def start_scenario(scenario_id):
             """
             INSERT INTO play_history (user_id, scenario_id, current_scene_id, is_completed)
             VALUES (?, ?, ?, 0)
-        """,
+            """,
             (session["user_id"], scenario_id, first_scene["scene_id"]),
         )
 
@@ -285,9 +322,9 @@ def play_scenario(scenario_id):
         # プレイ履歴を取得
         play_history = db.execute(
             """
-            SELECT * FROM play_history 
+            SELECT * FROM play_history
             WHERE user_id = ? AND scenario_id = ?
-        """,
+            """,
             (session["user_id"], scenario_id),
         ).fetchone()
 
@@ -301,17 +338,13 @@ def play_scenario(scenario_id):
             FROM scenes s
             JOIN scenarios sc ON s.scenario_id = sc.id
             WHERE s.scenario_id = ? AND s.scene_id = ?
-        """,
+            """,
             (scenario_id, play_history["current_scene_id"]),
         ).fetchone()
 
         # 選択肢を取得
         selections = db.execute(
-            """
-            SELECT *
-            FROM selections
-            WHERE scene_id = ?
-        """,
+            "SELECT * FROM selections WHERE scene_id = ?",
             (current_scene["id"],),
         ).fetchall()
 
@@ -331,7 +364,7 @@ def make_selection(scenario_id, selection_id):
             FROM selections s
             JOIN scenes sc ON s.scene_id = sc.id
             WHERE s.id = ?
-        """,
+            """,
             (selection_id,),
         ).fetchone()
 
@@ -344,7 +377,7 @@ def make_selection(scenario_id, selection_id):
             """
             SELECT * FROM play_history
             WHERE user_id = ? AND scenario_id = ?
-        """,
+            """,
             (session["user_id"], scenario_id),
         ).fetchone()
 
@@ -353,33 +386,43 @@ def make_selection(scenario_id, selection_id):
             """
             INSERT INTO selection_history (play_history_id, scene_id, selection_id)
             VALUES (?, ?, ?)
-        """,
+            """,
             (play_history["id"], selection["scene_id"], selection_id),
         )
 
         # 次のシーンの情報を取得
+        next_id = dict(selection).get("next_id")
+        if next_id is None:
+            # TODO: ランダム移動先を取得
+            random_selections = db.execute(
+                """
+                SELECT next_id FROM random_selections
+                WHERE selection_id = ?
+                """,
+                (selection_id,),
+            ).fetchall()
+            random_selections = list(map(lambda x: x["next_id"], random_selections))
+            next_id = random.choice(random_selections)
         next_scene = db.execute(
             """
             SELECT id, is_end FROM scenes
             WHERE scenario_id = ? AND scene_id = ?
-        """,
-            (scenario_id, selection["next_id"]),
+            """,
+            (scenario_id, next_id),
         ).fetchone()
 
         # プレイ履歴を更新
         db.execute(
             """
             UPDATE play_history
-            SET current_scene_id = ?,
-                is_completed = ?
+            SET current_scene_id = ?, is_completed = ?
             WHERE id = ?
-        """,
-            (selection["next_id"], next_scene["is_end"], play_history["id"]),
+            """,
+            (next_id, next_scene["is_end"], play_history["id"]),
         )
 
         if next_scene["is_end"]:
             return redirect(url_for("show_ending", scenario_id=scenario_id))
-            return redirect(url_for("show_review", scenario_id=scenario_id))
 
     return redirect(url_for("play_scenario", scenario_id=scenario_id))
 
@@ -391,9 +434,9 @@ def show_ending(scenario_id):
         # プレイ履歴を取得
         play_history = db.execute(
             """
-            SELECT * FROM play_history 
+            SELECT * FROM play_history
             WHERE user_id = ? AND scenario_id = ?
-        """,
+            """,
             (session["user_id"], scenario_id),
         ).fetchone()
 
@@ -407,17 +450,13 @@ def show_ending(scenario_id):
             FROM scenes s
             JOIN scenarios sc ON s.scenario_id = sc.id
             WHERE s.scenario_id = ? AND s.scene_id = ?
-        """,
+            """,
             (scenario_id, play_history["current_scene_id"]),
         ).fetchone()
 
         # 選択肢を取得
         selections = db.execute(
-            """
-            SELECT *
-            FROM selections
-            WHERE scene_id = ?
-        """,
+            "SELECT * FROM selections WHERE scene_id = ?",
             (current_scene["id"],),
         ).fetchall()
 
@@ -435,9 +474,7 @@ def show_review(scenario_id):
     with get_db() as db:
         # シナリオ情報を取得
         scenario = db.execute(
-            """
-            SELECT * FROM scenarios WHERE id = ?
-        """,
+            "SELECT * FROM scenarios WHERE id = ?",
             (scenario_id,),
         ).fetchone()
 
@@ -446,7 +483,7 @@ def show_review(scenario_id):
             """
             SELECT * FROM play_history
             WHERE user_id = ? AND scenario_id = ?
-        """,
+            """,
             (session["user_id"], scenario_id),
         ).fetchone()
 
@@ -459,7 +496,7 @@ def show_review(scenario_id):
             JOIN selections sel ON sh.selection_id = sel.id
             WHERE sh.play_history_id = ?
             ORDER BY sh.id
-        """,
+            """,
             (play_history["id"],),
         ).fetchall()
 
@@ -469,7 +506,7 @@ def show_review(scenario_id):
             FROM scenes s
             JOIN scenarios sc ON s.scenario_id = sc.id
             WHERE s.scenario_id = ? AND s.scene_id = ?
-        """,
+            """,
             (scenario_id, play_history["current_scene_id"]),
         ).fetchone()
 
