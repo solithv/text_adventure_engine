@@ -81,17 +81,16 @@ json形式でシナリオを定義できます
 
 ```typescript
 {
-    title:string                // シナリオのタイトル
-    description:string          // シナリオの説明
-    scenes:{                    // シーンの定義(複数可)
-        id:number               // シーンID
-        text:string             // シーンの文字列
-        image?:string           // シーンの画像
-        end?:boolean            // エンディングシーンフラグ
-        selection:{             // 選択肢の定義(複数可)
-            nextId?:number      // 次のシーンID
-            nextIds?:number[]   // 次のシーンID(ランダム抽出)
-            text:string         // 選択肢の文字列
+    title:string                    // シナリオのタイトル
+    description:string              // シナリオの説明
+    scenes:{                        // シーンの定義(複数可)
+        id:number                   // シーンID
+        text:string                 // シーンの文字列
+        image?:string               // シーンの画像
+        end?:boolean                // エンディングシーンフラグ
+        selection:{                 // 選択肢の定義(複数可)
+            nextId:number|number[]  // 次のシーンID
+            text:string             // 選択肢の文字列
         }[]
     }[]
 }
@@ -144,15 +143,9 @@ json形式でシナリオを定義できます
 
 選択肢には以下の要素が含まれます：
 
-- nextId (整数, 任意):
-    選択肢を選んだ後に移行するシーンの id を指定します
-
-- nextIds (整数の配列, 任意):
-    複数のシーン id を指定します</br>
-    次のシーンが複数ある場合、ランダムで選ばれたシーンに進む設定が可能です
-
-    > 注意: nextId と nextIds は、いずれか一方を必ず指定する必要があります</br>
-    > どちらも指定した場合は、nextId が優先されます
+- nextId (整数 または 整数の配列, 任意):
+    選択肢を選んだ後に移行するシーンの id を指定します</br>
+    整数の配列で指定した場合はランダムで選ばれたシーンに進む設定が可能です
 
 - text (文字列):
     選択肢の内容や説明文です</br>

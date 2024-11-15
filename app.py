@@ -20,7 +20,7 @@ from flask import (
     session,
     url_for,
 )
-from jsonschema import validate
+from jsonschema import SchemaError, ValidationError, validate
 from werkzeug.security import check_password_hash, generate_password_hash
 
 load_dotenv()
@@ -232,18 +232,18 @@ def validate_json(data):
                             "items": {
                                 "type": "object",
                                 "properties": {
-                                    "nextId": {"type": "number"},
-                                    "nextIds": {
-                                        "type": "array",
-                                        "items": {"type": "number"},
+                                    "nextId": {
+                                        "oneOf": [
+                                            {"type": "number"},
+                                            {
+                                                "type": "array",
+                                                "items": {"type": "number"},
+                                            },
+                                        ]
                                     },
                                     "text": {"type": "string"},
                                 },
-                                "required": ["text"],
-                                "oneOf": [
-                                    {"required": ["nextId"]},
-                                    {"required": ["nextIds"]},
-                                ],
+                                "required": ["text", "nextId"],
                             },
                         },
                     },
@@ -253,7 +253,14 @@ def validate_json(data):
         },
         "required": ["title", "description", "scenes"],
     }
-    validate(instance=data, schema=schema)
+    try:
+        validate(instance=data, schema=schema)
+    except ValidationError as e:
+        print(f"ValidationError: {e.message}")
+        raise e
+    except SchemaError as e:
+        print(f"SchemaError: {e.message}")
+        raise e
 
 
 @transact(args.database)
@@ -309,16 +316,22 @@ def import_scenario(db: sqlite3.Connection, scenario_data):
         )
         scene_id = cursor.lastrowid
 
-        for selection in scene.get("selection", []):
-            cursor.execute(
-                "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
-                (scene_id, selection.get("nextId"), selection["text"]),
-            )
-            selection_id = cursor.lastrowid
-            for random_selection in selection.get("nextIds", []):
+        for selection in scene["selection"]:
+            if isinstance(selection["nextId"], list):
                 cursor.execute(
-                    "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
-                    (selection_id, random_selection),
+                    "INSERT INTO selections (scene_id, text) VALUES (?, ?)",
+                    (scene_id, selection["text"]),
+                )
+                selection_id = cursor.lastrowid
+                for random_selection in selection["nextId"]:
+                    cursor.execute(
+                        "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
+                        (selection_id, random_selection),
+                    )
+            else:
+                cursor.execute(
+                    "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
+                    (scene_id, selection["nextId"], selection["text"]),
                 )
     cursor.close()
 
