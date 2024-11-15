@@ -28,9 +28,9 @@ load_dotenv()
 
 def get_image_folder():
     if getattr(sys, "frozen", False):
-        return os.path.join(os.path.dirname(sys.executable), "images")
+        return os.path.join(os.path.dirname(sys.executable), image_base)
     else:
-        return "images"
+        return image_base
 
 
 def define_argparse():
@@ -58,6 +58,7 @@ args = define_argparse()
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", os.urandom(24))
 debug = os.getenv("DEBUG", False)
+image_base = os.getenv("IMAGE_FOLDER", "images")
 image_folder = get_image_folder()
 
 
@@ -412,7 +413,7 @@ def scenario_list(db: sqlite3.Connection):
     return render_template("scenario_list.html", scenarios=scenarios)
 
 
-@app.route("/images/<path:path>")
+@app.route(f"/{image_base}/<path:path>")
 @login_required
 def send_image(path):
     return send_from_directory(image_folder, path)

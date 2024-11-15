@@ -157,7 +157,8 @@ json形式でシナリオを定義できます
 
 ### 画像の指定方法
 
-imageを指定する際は`images`フォルダ内に画像ファイルを配置の上、`images`フォルダからのパスを指定してください
+imageを指定する際は`images`フォルダ内に画像ファイルを配置の上、`images`フォルダからのパスを指定してください</br>
+フォルダ名は[設定](#設定)で変更できます
 
 ```bash
 .
@@ -200,6 +201,7 @@ user3,password3
 ```sh:.env
 PORT=5000                   # ポート指定
 DATABASE=engine.db          # DBのファイル名
+IMAGE_FOLDER=images         # 画像ファイルの配置フォルダ
 DEBUG=False                 # flaskのdebugモード
 SECRET_KEY=your_secret_key  # flaskのsecret key(安全なkeyを生成して指定してください)
 ```
