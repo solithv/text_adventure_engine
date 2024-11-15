@@ -312,10 +312,10 @@ def import_scenario(db: sqlite3.Connection, scenario_data):
         for selection in scene.get("selection", []):
             cursor.execute(
                 "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
-                (scene_id, dict(selection).get("nextId"), selection["text"]),
+                (scene_id, selection.get("nextId"), selection["text"]),
             )
             selection_id = cursor.lastrowid
-            for random_selection in dict(selection).get("nextIds", []):
+            for random_selection in selection.get("nextIds", []):
                 cursor.execute(
                     "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
                     (selection_id, random_selection),
