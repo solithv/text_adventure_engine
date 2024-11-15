@@ -223,7 +223,7 @@ def validate_json(data):
                 "items": {
                     "type": "object",
                     "properties": {
-                        "id": {"type": "number"},
+                        "id": {"type": "integer"},
                         "text": {"type": "string"},
                         "image": {"type": "string"},
                         "end": {"type": "boolean"},
@@ -234,10 +234,11 @@ def validate_json(data):
                                 "properties": {
                                     "nextId": {
                                         "oneOf": [
-                                            {"type": "number"},
+                                            {"type": "integer"},
                                             {
                                                 "type": "array",
-                                                "items": {"type": "number"},
+                                                "items": {"type": "integer"},
+                                                "minItems": 1,
                                             },
                                         ]
                                     },
@@ -245,9 +246,12 @@ def validate_json(data):
                                 },
                                 "required": ["text", "nextId"],
                             },
+                            "minItems": 0,
                         },
                     },
                     "required": ["id", "text", "selection"],
+                    "if": {"properties": {"end": {"const": False}}},
+                    "then": {"properties": {"selection": {"minItems": 1}}},
                 },
             },
         },
