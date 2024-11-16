@@ -1,6 +1,13 @@
 {% extends "base.html" %}
 {% block content %}
+{% if admin %}
+<div class="nav-menu">
+    <a href="{{ url_for('login') }}">利用者ページ</a>
+</div>
+<h1>管理者 ログイン</h1>
+{% else %}
 <h1>ログイン</h1>
+{% endif %}
 <form method="POST" class="form">
     <div class="form-group">
         <label>ユーザー名</label>
