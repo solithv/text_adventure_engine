@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{% if user %}
+<h2 style="text-align: center;">ユーザ : {{ user.username }}</h2>
+{% endif %}
 <h1>シナリオ一覧</h1>
 <div class="scenarios">
     {% for scenario in scenarios %}
@@ -17,6 +20,11 @@
         </div>
         <p>{{ scenario.description }}</p>
         <div class="scenario-actions">
+            {% if user %}
+            {% if scenario.is_completed %}
+            <a href="{{ url_for('user_review', user_id=user.id, scenario_id=scenario.id) }}" class="button">プレイログ</a>
+            {% endif %}
+            {% else %}
             {% if scenario.is_completed %}
             <a href="{{ url_for('show_review', scenario_id=scenario.id) }}" class="button">振り返る</a>
             <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">もう一度プレイ</a>
@@ -25,6 +33,7 @@
             <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">最初から</a>
             {% else %}
             <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">プレイ開始</a>
+            {% endif %}
             {% endif %}
         </div>
     </div>

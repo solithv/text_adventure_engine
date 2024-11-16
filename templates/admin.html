@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block content %}
+
+<h1>ユーザ一覧</h1>
+
+<div class="user-list">
+    {% for user in users %}
+    <div class="user-card">
+        <div class="user-info">
+            <h2>{{ user.username }}</h2>
+            <div class="user-actions">
+                <a href="{{ url_for('user_info', user_id=user.id) }}" class="button">
+                    詳細を見る
+                </a>
+                <button onclick="openPasswordDialog('{{ user.id }}', '{{ user.username }}')" class="button"
+                    style="background-color: #6366f1;">
+                    パスワード変更
+                </button>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- パスワード変更モーダル -->
+<div id="password-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <h2>パスワード変更</h2>
+        <div class="form-group">
+            <label for="new-password">ユーザー名</label>
+            <input id="target-user" type="text" disabled>
+        </div>
+        <form id="password-form" method="POST">
+            <div class="form-group">
+                <label for="new-password">新しいパスワード</label>
+                <input type="password" id="new-password" name="new_password" required>
+            </div>
+            <div class="form-group">
+                <label for="confirm-password">パスワード（確認）</label>
+                <input type="password" id="confirm-password" name="confirm_password" required>
+            </div>
+            <div class="modal-actions">
+                <button type="submit" class="button">変更</button>
+                <button type="button" class="button" style="background-color: #6b7280;"
+                    onclick="closePasswordDialog()">キャンセル</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    let currentUserId = null;
+    let preventImmediateClose = false;
+
+    function openPasswordDialog(userId, username) {
+        currentUserId = userId;
+        document.getElementById('target-user').value = username;
+        document.getElementById('password-modal').style.display = 'flex';
+        document.getElementById('password-form').reset();
+
+        // イベントリスナー追加
+        setTimeout(() => window.addEventListener('click', outsideClickHandler), 0);
+    }
+
+    function closePasswordDialog() {
+        document.getElementById('password-modal').style.display = 'none';
+        currentUserId = null;
+
+        // イベントリスナー削除
+        window.removeEventListener('click', outsideClickHandler);
+    }
+
+    // モーダル外部クリックで閉じる処理
+    function outsideClickHandler(event) {
+        const modal = document.getElementById('password-modal');
+        const modalContent = document.querySelector('.modal-content');
+
+        // モーダルが表示されており、かつクリックがモーダル内部でない場合に閉じる
+        if (modal.style.display === 'flex' && !modalContent.contains(event.target)) {
+            closePasswordDialog();
+        }
+    }
+
+    document.getElementById('password-form').onsubmit = async (e) => {
+        e.preventDefault();
+
+        const newPassword = document.getElementById('new-password').value;
+        const confirmPassword = document.getElementById('confirm-password').value;
+
+        if (newPassword !== confirmPassword) {
+            // クライアントサイドでパスワード不一致を検証
+            const response = await fetch(`/admin/users/${currentUserId}/password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    password: newPassword,
+                    error: 'passwords_mismatch'  // パスワード不一致エラーを送信
+                })
+            });
+            window.location.reload();
+            return;
+        }
+
+        try {
+            const response = await fetch(`/admin/users/${currentUserId}/password`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ password: newPassword })
+            });
+
+            if (!response.ok) {
+                throw new Error('Update failed');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+        }
+        window.location.reload();
+    };
+</script>
+
+{% endblock %}

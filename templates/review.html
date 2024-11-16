@@ -1,5 +1,8 @@
 {% extends "base.html" %}
 {% block content %}
+{% if user %}
+<h2 style="text-align: center;">ユーザ : {{ user.username }}</h2>
+{% endif %}
 <h1>{{ scenario.title }} - バックログ</h1>
 <div class="timeline">
     {% for selection in selection_history %}
@@ -22,7 +25,11 @@
     </div>
 </div>
 <div class="scenario-actions" style="text-align: center;">
+    {% if user %}
+    <a href="{{ url_for('user_info', user_id=user.id) }}" class="button">シナリオ一覧へ</a>
+    {% else %}
     <a href="{{ url_for('start_scenario', scenario_id=scenario.id) }}" class="button">もう一度プレイ</a>
     <a href="{{ url_for('scenario_list') }}" class="button">シナリオ一覧へ</a>
+    {% endif %}
 </div>
 {% endblock %}
