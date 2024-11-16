@@ -27,7 +27,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 load_dotenv()
 
 
-def get_image_folder():
+def get_image_folder(image_base):
     if getattr(sys, "frozen", False):
         return os.path.join(os.path.dirname(sys.executable), image_base)
     else:
@@ -55,17 +55,24 @@ def define_argparse():
     return parser.parse_args()
 
 
-args = define_argparse()
+def init_app():
+    app = Flask(__name__)
+    app.config["ARGS"] = define_argparse()
+    app.secret_key = os.getenv("SECRET_KEY", os.urandom(24))
+    app.config["MAX_CONTENT_LENGTH"] = int(
+        os.getenv("MAX_CONTENT_LENGTH", 1 * (1024**2))
+    )
+    app.config["UPLOAD_FOLDER"] = os.getenv("UPLOAD_FOLDER", "temp")
+    app.config["DEBUG"] = os.getenv("DEBUG", False)
+    app.config["IMAGE_BASE"] = os.getenv("IMAGE_FOLDER", "images")
+    app.config["IMAGE_FOLDER"] = get_image_folder(app.config["IMAGE_BASE"])
 
-app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", os.urandom(24))
-app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", 1 * (1024**2)))
-app.config["UPLOAD_FOLDER"] = os.getenv("UPLOAD_FOLDER", "temp")
-debug = os.getenv("DEBUG", False)
-image_base = os.getenv("IMAGE_FOLDER", "images")
-image_folder = get_image_folder()
-os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-os.makedirs(image_base, exist_ok=True)
+    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+
+    return app
+
+
+app = init_app()
 
 
 def transact(db_url):
@@ -123,7 +130,7 @@ def admin_required(f):
     return decorated_function
 
 
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def init_db(db: sqlite3.Connection):
     # 管理者テーブル
     db.execute(
@@ -308,7 +315,7 @@ def init_db(db: sqlite3.Connection):
     )
 
 
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def admin_register_from_csv(db: sqlite3.Connection, csv_file: str):
     with open(csv_file, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -323,7 +330,7 @@ def admin_register_from_csv(db: sqlite3.Connection, csv_file: str):
             )
 
 
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def register_from_csv(db: sqlite3.Connection, csv_file: str):
     with open(csv_file, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -393,7 +400,7 @@ def validate_json(data):
         raise e
 
 
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def import_scenario(db: sqlite3.Connection, scenario_data):
     validate_json(scenario_data)
     cursor = db.cursor()
@@ -472,7 +479,7 @@ def index():
 
 
 @app.route("/admin/login", methods=["GET", "POST"])
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def admin_login(db: sqlite3.Connection):
     if request.method == "POST":
         username = request.form["username"]
@@ -499,7 +506,7 @@ def admin_logout():
 
 @app.route("/admin")
 @admin_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def admin(db: sqlite3.Connection):
     users = db.execute("SELECT id, username FROM users ORDER BY id").fetchall()
     return render_template("admin.html", users=users)
@@ -507,7 +514,7 @@ def admin(db: sqlite3.Connection):
 
 @app.route("/admin/users", methods=["GET", "POST"])
 @admin_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def user_list(db: sqlite3.Connection):
     if request.method == "POST":
         try:
@@ -537,7 +544,7 @@ def handle_flash_message():
 
 @app.route("/admin/users/<int:user_id>/password", methods=["POST"])
 @admin_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def change_user_password(db: sqlite3.Connection, user_id):
     data = request.get_json()
     new_password = data.get("password")
@@ -579,7 +586,7 @@ def change_user_password(db: sqlite3.Connection, user_id):
 
 @app.route("/admin/users/<int:user_id>")
 @admin_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def user_info(db: sqlite3.Connection, user_id):
     user = db.execute(
         "SELECT id, username FROM users WHERE id= ?", (user_id,)
@@ -599,7 +606,7 @@ def user_info(db: sqlite3.Connection, user_id):
 
 @app.route("/admin/users/<int:user_id>/<int:scenario_id>")
 @admin_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def user_review(db: sqlite3.Connection, user_id, scenario_id):
     user = db.execute(
         "SELECT id, username FROM users WHERE id= ?", (user_id,)
@@ -653,9 +660,9 @@ def user_review(db: sqlite3.Connection, user_id, scenario_id):
 
 
 @app.route("/register", methods=["GET", "POST"])
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def register(db: sqlite3.Connection):
-    if not args.registrable:
+    if not app.config["ARGS"].registrable:
         abort(404)
     if request.method == "POST":
         username = request.form["username"]
@@ -675,7 +682,7 @@ def register(db: sqlite3.Connection):
 
 
 @app.route("/login", methods=["GET", "POST"])
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def login(db: sqlite3.Connection):
     if request.method == "POST":
         username = request.form["username"]
@@ -691,7 +698,7 @@ def login(db: sqlite3.Connection):
 
         flash("Invalid username or password!", "alert")
 
-    return render_template("login.html", registrable=args.registrable)
+    return render_template("login.html", registrable=app.config["ARGS"].registrable)
 
 
 @app.route("/logout")
@@ -702,7 +709,7 @@ def logout():
 
 @app.route("/scenarios")
 @login_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def scenario_list(db: sqlite3.Connection):
     scenarios = db.execute(
         """
@@ -717,15 +724,15 @@ def scenario_list(db: sqlite3.Connection):
     return render_template("scenario_list.html", scenarios=scenarios)
 
 
-@app.route(f"/{image_base}/<path:path>")
+@app.route(f"/{app.config['IMAGE_BASE']}/<path:path>")
 @login_required
 def send_image(path):
-    return send_from_directory(image_folder, path)
+    return send_from_directory(app.config["IMAGE_FOLDER"], path)
 
 
 @app.route("/play/<int:scenario_id>/start")
 @login_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def start_scenario(db: sqlite3.Connection, scenario_id):
     # 最初のシーンを取得
     first_scene = db.execute(
@@ -776,7 +783,7 @@ def start_scenario(db: sqlite3.Connection, scenario_id):
 
 @app.route("/play/<int:scenario_id>")
 @login_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def play_scenario(db: sqlite3.Connection, scenario_id):
     # プレイ履歴を取得
     play_history = db.execute(
@@ -814,7 +821,7 @@ def play_scenario(db: sqlite3.Connection, scenario_id):
 
 @app.route("/play/<int:scenario_id>/select/<int:selection_id>", methods=["POST"])
 @login_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def make_selection(db: sqlite3.Connection, scenario_id, selection_id):
     # 選択肢の情報を取得
     selection = db.execute(
@@ -881,7 +888,7 @@ def make_selection(db: sqlite3.Connection, scenario_id, selection_id):
 
 @app.route("/play/<int:scenario_id>/ending")
 @login_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def show_ending(db: sqlite3.Connection, scenario_id):
     # プレイ履歴を取得
     play_history = db.execute(
@@ -922,7 +929,7 @@ def show_ending(db: sqlite3.Connection, scenario_id):
 
 @app.route("/play/<int:scenario_id>/review")
 @login_required
-@transact(args.database)
+@transact(app.config["ARGS"].database)
 def show_review(db: sqlite3.Connection, scenario_id):
     # シナリオ情報を取得
     scenario = db.execute(
@@ -972,19 +979,19 @@ def show_review(db: sqlite3.Connection, scenario_id):
 
 def main():
     init_db()
-    if args.admin:
+    if app.config["ARGS"].admin:
         try:
-            admin_register_from_csv(args.admin)
+            admin_register_from_csv(app.config["ARGS"].admin)
             print("Admin registration successful.")
         except Exception:
             print("Admin registration failed.")
-    if args.register:
+    if app.config["ARGS"].register:
         try:
-            register_from_csv(args.register)
+            register_from_csv(app.config["ARGS"].register)
             print("User registration successful.")
         except Exception:
             print("User registration failed.")
-    for scenario_json in args.scenarios:
+    for scenario_json in app.config["ARGS"].scenarios:
         try:
             with open(scenario_json, "r", encoding="utf-8") as f:
                 scenario_data = json.load(f)
@@ -993,7 +1000,7 @@ def main():
         except Exception:
             print(f"Import scenario failed: {scenario_json}")
 
-    app.run(host="0.0.0.0", port=args.port, debug=debug)
+    app.run(host="0.0.0.0", port=app.config["ARGS"].port, debug=app.config["DEBUG"])
 
 
 if __name__ == "__main__":
