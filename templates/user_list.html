@@ -73,7 +73,7 @@
                 fileList.appendChild(listItem);
             }
         }
-        uploadButton.disabled = !(files.length > 0);
+        uploadButton.disabled = !(fileList.childElementCount > 0);
     }
 
     // ドロップゾーンのクリックでファイル選択ダイアログを開く
