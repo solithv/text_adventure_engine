@@ -11,7 +11,7 @@
     <div class="container">
         {% if 'admin_id' in session %}
         <div class="nav-menu">
-            <a href="{{ url_for('admin') }}">ユーザ一覧</a>
+            <a href="{{ url_for('admin') }}">管理者トップページ</a>
             <a href="{{ url_for('admin_logout') }}">ログアウト</a>
         </div>
         {% elif 'user_id' in session %}

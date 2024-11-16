@@ -59,9 +59,13 @@ args = define_argparse()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", os.urandom(24))
+app.config["MAX_CONTENT_LENGTH"] = int(os.getenv("MAX_CONTENT_LENGTH", 1 * (1024**2)))
+app.config["UPLOAD_FOLDER"] = os.getenv("UPLOAD_FOLDER", "temp")
 debug = os.getenv("DEBUG", False)
 image_base = os.getenv("IMAGE_FOLDER", "images")
 image_folder = get_image_folder()
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+os.makedirs(image_base, exist_ok=True)
 
 
 def transact(db_url):
@@ -501,10 +505,33 @@ def admin(db: sqlite3.Connection):
     return render_template("admin.html", users=users)
 
 
+@app.route("/admin/users", methods=["GET", "POST"])
+@admin_required
+@transact(args.database)
+def user_list(db: sqlite3.Connection):
+    if request.method == "POST":
+        try:
+            files = request.files.getlist("files[]")
+            files = [file for file in files if file.filename.endswith(".csv")]
+            if not files:
+                flash("No CSV files were uploaded!", "alert")
+            for file in files:
+                filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+                file.save(filepath)
+                register_from_csv(filepath)
+                os.remove(filepath)
+                flash("User registration successful!", "success")
+        except Exception:
+            flash("User registration failed!", "error")
+
+    users = db.execute("SELECT id, username FROM users ORDER BY id").fetchall()
+    return render_template("user_list.html", users=users)
+
+
 @app.before_request
-def handle_password_change_message():
-    if "password_change_message" in session:
-        message = session.pop("password_change_message")
+def handle_flash_message():
+    if "flash_message" in session:
+        message = session.pop("flash_message")
         flash(message["text"], message["type"])
 
 
@@ -517,14 +544,14 @@ def change_user_password(db: sqlite3.Connection, user_id):
     error_type = data.get("error")
 
     if error_type == "passwords_mismatch":
-        session["password_change_message"] = {
+        session["flash_message"] = {
             "type": "error",
             "text": "Passwords do not match!",
         }
         return jsonify({"message": "Passwords do not match"}), 400
 
     if not new_password:
-        session["password_change_message"] = {
+        session["flash_message"] = {
             "type": "error",
             "text": "Password is required!",
         }
@@ -536,14 +563,14 @@ def change_user_password(db: sqlite3.Connection, user_id):
             (generate_password_hash(new_password), user_id),
         )
         # セッションに一時的なメッセージを保存
-        session["password_change_message"] = {
+        session["flash_message"] = {
             "type": "success",
             "text": "Password updated successfully!",
         }
         return jsonify({"message": "Password updated successfully"})
     except Exception as e:
         db.rollback()
-        session["password_change_message"] = {
+        session["flash_message"] = {
             "type": "error",
             "text": "Password update failed!",
         }
