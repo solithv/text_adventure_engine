@@ -1,12 +1,40 @@
 {% extends "base.html" %}
 {% block content %}
-
-<a href="{{ url_for('user_list') }}" class="button">
-    ユーザ一覧
-</a>
-
-<a href="{{ url_for('scenarios') }}" class="button">
-    シナリオ一覧
-</a>
-
+<h1>管理者トップページ</h1>
+<div class="admin-dashboard">
+    <div class="scenario-card">
+        <div class="scenario-info">
+            <h2>ユーザ管理</h2>
+            <div>--</div>
+            <div class="status-badge completed">
+                {{ total_users }}件
+            </div>
+        </div>
+        <div class="scene-text">
+            ユーザーの追加、パスワード変更、プレイログの確認などのユーザ管理機能はこちら
+        </div>
+        <div class="scenario-actions">
+            <a href="{{ url_for('user_list') }}" class="button">
+                ユーザ一覧へ
+            </a>
+        </div>
+    </div>
+    <div class="scenario-card">
+        <div class="scenario-info">
+            <h2>シナリオ管理</h2>
+            <div>--</div>
+            <div class="status-badge completed">
+                {{ total_scenarios }}件
+            </div>
+        </div>
+        <div class="scene-text">
+            シナリオの追加、確認などのシナリオ管理機能はこちら
+        </div>
+        <div class="scenario-actions">
+            <a href="{{ url_for('scenarios') }}" class="button">
+                シナリオ一覧へ
+            </a>
+        </div>
+    </div>
+</div>
 {% endblock %}

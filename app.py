@@ -512,8 +512,15 @@ def admin_logout():
 @admin_required
 @transact(app.config["ARGS"].database)
 def admin(db: sqlite3.Connection):
-    users = db.execute("SELECT id, username FROM users ORDER BY id").fetchall()
-    return render_template("admin.html", users=users)
+    total_users = db.execute("SELECT COUNT(*) as total FROM users").fetchone()["total"]
+    total_scenarios = db.execute("SELECT COUNT(*) as total FROM scenarios").fetchone()[
+        "total"
+    ]
+    return render_template(
+        "admin.html",
+        total_users=total_users,
+        total_scenarios=total_scenarios,
+    )
 
 
 @app.route("/admin/users", methods=["GET", "POST"])
