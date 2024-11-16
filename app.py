@@ -401,7 +401,9 @@ def validate_json(data):
 
 
 @transact(app.config["ARGS"].database)
-def import_scenario(db: sqlite3.Connection, scenario_data):
+def import_scenario(db: sqlite3.Connection, scenario_json):
+    with open(scenario_json, "r", encoding="utf-8") as f:
+        scenario_data = json.load(f)
     validate_json(scenario_data)
     cursor = db.cursor()
 
@@ -470,6 +472,8 @@ def import_scenario(db: sqlite3.Connection, scenario_data):
                 )
     cursor.close()
 
+    return scenario_data["title"]
+
 
 @app.route("/")
 def index():
@@ -533,6 +537,40 @@ def user_list(db: sqlite3.Connection):
 
     users = db.execute("SELECT id, username FROM users ORDER BY id").fetchall()
     return render_template("user_list.html", users=users)
+
+
+@app.route("/admin/scenarios", methods=["GET", "POST"])
+@admin_required
+@transact(app.config["ARGS"].database)
+def scenarios(db: sqlite3.Connection):
+    if request.method == "POST":
+        try:
+            files = request.files.getlist("files[]")
+            files = [file for file in files if file.filename.endswith(".json")]
+            if not files:
+                flash("No JSON files were uploaded!", "alert")
+            for file in files:
+                filepath = os.path.join(app.config["UPLOAD_FOLDER"], file.filename)
+                file.save(filepath)
+                title = import_scenario(filepath)
+                os.remove(filepath)
+                flash(f"Scenario ({title}) registration successful!", "success")
+        except Exception:
+            flash("Scenario registration failed!", "error")
+
+    scenarios = db.execute(
+        """
+        SELECT s.*,
+        COUNT(CASE WHEN p.is_completed = 1 THEN 1 END) AS completed_users,
+        COUNT(CASE WHEN p.is_completed = 0 THEN 1 END) AS uncompleted_users,
+        (SELECT COUNT(*) FROM users) AS total_users
+        FROM scenarios s
+        LEFT JOIN play_history p ON s.id = p.scenario_id
+        GROUP BY s.id
+        ORDER BY s.id
+        """
+    ).fetchall()
+    return render_template("scenario_list.html", scenarios=scenarios, admin=True)
 
 
 @app.before_request
@@ -993,10 +1031,8 @@ def main():
             print("User registration failed.")
     for scenario_json in app.config["ARGS"].scenarios:
         try:
-            with open(scenario_json, "r", encoding="utf-8") as f:
-                scenario_data = json.load(f)
-                import_scenario(scenario_data)
-            print(f"Imported scenario: {scenario_data['title']}")
+            title = import_scenario(scenario_json)
+            print(f"Imported scenario: {title}")
         except Exception:
             print(f"Import scenario failed: {scenario_json}")
 

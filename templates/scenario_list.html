@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block content %}
-{% if user %}
+{% if admin %}
+<h2>シナリオファイルのアップロード</h2>
+<form id="upload-form" enctype="multipart/form-data" method="post" action="/admin/scenarios">
+    <div id="drop-zone">Drop json files here</div>
+    <input type="file" accept=".json" id="file-input" name="files[]" multiple style="display: none;">
+    <ul id="file-list"></ul>
+    <button id="upload-button" type="submit" class="button" disabled>Upload</button>
+</form>
+{% elif user %}
 <h2 style="text-align: center;">ユーザ : {{ user.username }}</h2>
 {% endif %}
 <h1>シナリオ一覧</h1>
@@ -10,7 +18,10 @@
         <div class="scenario-info">
             <h2>{{ scenario.title }}</h2>
             <div>--</div>
-            {% if scenario.is_completed %}
+            {% if admin %}
+            <div class="status-badge completed">{{ scenario.completed_users }}/{{ scenario.total_users }} プレイ済み</div>
+            <div class="status-badge completed">({{ scenario.uncompleted_users }} プレイ中)</div>
+            {% elif scenario.is_completed %}
             <div class="status-badge completed">完了済み</div>
             {% elif scenario.current_scene_id %}
             <div class="status-badge in-progress">進行中</div>
@@ -19,6 +30,7 @@
             {% endif %}
         </div>
         <p>{{ scenario.description }}</p>
+        {% if not admin %}
         <div class="scenario-actions">
             {% if user %}
             {% if scenario.is_completed %}
@@ -36,7 +48,64 @@
             {% endif %}
             {% endif %}
         </div>
+        {% endif %}
     </div>
     {% endfor %}
 </div>
+
+{% if admin %}
+<script>
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileList = document.getElementById('file-list');
+    const form = document.getElementById('upload-form');
+    const uploadButton = document.getElementById('upload-button');
+
+    // ファイルリストを更新する関数
+    function updateFileList(files) {
+        fileList.innerHTML = ''; // リストをクリア
+        for (const file of files) {
+            if (file.name.endsWith('.json')) {
+                const listItem = document.createElement('li');
+                listItem.textContent = file.name;
+                fileList.appendChild(listItem);
+            }
+        }
+        uploadButton.disabled = !(files.length > 0);
+    }
+
+    // ドロップゾーンのクリックでファイル選択ダイアログを開く
+    dropZone.addEventListener('click', () => {
+        fileInput.click();
+    });
+
+    // Drag & Drop の処理
+    dropZone.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        dropZone.classList.add('dragover');
+    });
+
+    dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('dragover');
+    });
+
+    dropZone.addEventListener('drop', (event) => {
+        event.preventDefault();
+        dropZone.classList.remove('dragover');
+
+        // ドロップされたファイルを取得
+        const files = event.dataTransfer.files;
+        if (files.length > 0) {
+            // ファイルを input に設定
+            fileInput.files = files;
+            updateFileList(files);
+        }
+    });
+
+    // ファイル選択ダイアログの処理
+    fileInput.addEventListener('change', () => {
+        updateFileList(fileInput.files);
+    });
+</script>
+{% endif %}
 {% endblock %}
