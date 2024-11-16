@@ -152,17 +152,16 @@ def init_db(db: sqlite3.Connection):
         CREATE TABLE IF NOT EXISTS selections (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             scene_id INTEGER NOT NULL,
-            next_id INTEGER,
             text TEXT NOT NULL,
             FOREIGN KEY (scene_id) REFERENCES scenes (id)
         )
         """
     )
 
-    # ランダム選択肢テーブル
+    # 遷移先テーブル
     db.execute(
         """
-        CREATE TABLE IF NOT EXISTS random_selections (
+        CREATE TABLE IF NOT EXISTS next_scenes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             selection_id INTEGER NOT NULL,
             next_id INTEGER NOT NULL,
@@ -280,7 +279,7 @@ def import_scenario(db: sqlite3.Connection, scenario_data):
     if existing_scenario:
         cursor.execute(
             """
-            DELETE FROM random_selections WHERE selection_id IN
+            DELETE FROM next_scenes WHERE selection_id IN
             (
                 SELECT sel.id
                 FROM selections sel
@@ -322,21 +321,19 @@ def import_scenario(db: sqlite3.Connection, scenario_data):
         scene_id = cursor.lastrowid
 
         for selection in scene["selection"]:
-            if isinstance(selection["nextId"], list):
+            next_ids = selection["nextId"]
+            if isinstance(selection["nextId"], int):
+                next_ids = [next_ids]
+
+            cursor.execute(
+                "INSERT INTO selections (scene_id, text) VALUES (?, ?)",
+                (scene_id, selection["text"]),
+            )
+            selection_id = cursor.lastrowid
+            for next_id in next_ids:
                 cursor.execute(
-                    "INSERT INTO selections (scene_id, text) VALUES (?, ?)",
-                    (scene_id, selection["text"]),
-                )
-                selection_id = cursor.lastrowid
-                for random_selection in selection["nextId"]:
-                    cursor.execute(
-                        "INSERT INTO random_selections (selection_id, next_id) VALUES (?, ?)",
-                        (selection_id, random_selection),
-                    )
-            else:
-                cursor.execute(
-                    "INSERT INTO selections (scene_id, next_id, text) VALUES (?, ?, ?)",
-                    (scene_id, selection["nextId"], selection["text"]),
+                    "INSERT INTO next_scenes (selection_id, next_id) VALUES (?, ?)",
+                    (selection_id, next_id),
                 )
     cursor.close()
 
@@ -546,18 +543,11 @@ def make_selection(db: sqlite3.Connection, scenario_id, selection_id):
     )
 
     # 次のシーンの情報を取得
-    next_id = dict(selection).get("next_id")
-    if next_id is None:
-        # TODO: ランダム移動先を取得
-        random_selections = db.execute(
-            """
-            SELECT next_id FROM random_selections
-            WHERE selection_id = ?
-            """,
-            (selection_id,),
-        ).fetchall()
-        random_selections = list(map(lambda x: x["next_id"], random_selections))
-        next_id = random.choice(random_selections)
+    next_ids = db.execute(
+        "SELECT next_id FROM next_scenes WHERE selection_id = ?", (selection_id,)
+    ).fetchall()
+    next_ids = list(map(lambda x: x["next_id"], next_ids))
+    next_id = random.choice(next_ids)
     next_scene = db.execute(
         """
         SELECT id, is_end FROM scenes
@@ -675,6 +665,12 @@ def show_review(db: sqlite3.Connection, scenario_id):
 
 if __name__ == "__main__":
     init_db()
+    if args.register:
+        try:
+            register_from_csv(args.register)
+            print("User registration successful.")
+        except Exception:
+            print("User registration failed.")
     for scenario_json in args.scenarios:
         try:
             with open(scenario_json, "r", encoding="utf-8") as f:
@@ -683,11 +679,5 @@ if __name__ == "__main__":
             print(f"Imported scenario: {scenario_data['title']}")
         except Exception:
             print(f"Import scenario failed: {scenario_json}")
-    if args.register:
-        try:
-            register_from_csv(args.register)
-            print("User registration successful.")
-        except Exception:
-            print("User registration failed.")
 
     app.run(host="0.0.0.0", port=args.port, debug=debug)
