@@ -567,13 +567,18 @@ def scenarios(db: sqlite3.Connection):
 
     scenarios = db.execute(
         """
-        SELECT s.*,
-        COUNT(CASE WHEN p.is_completed = 1 THEN 1 END) AS completed_users,
-        COUNT(CASE WHEN p.is_completed = 0 THEN 1 END) AS uncompleted_users,
-        (SELECT COUNT(*) FROM users) AS total_users
+        WITH user_counts AS (
+            SELECT COUNT(*) as total_users FROM users
+        )
+        SELECT
+            s.*,
+            COUNT(CASE WHEN p.is_completed = 1 THEN 1 END) AS completed_users,
+            COUNT(CASE WHEN p.is_completed = 0 THEN 1 END) AS uncompleted_users,
+            uc.total_users
         FROM scenarios s
+        CROSS JOIN user_counts uc
         LEFT JOIN play_history p ON s.id = p.scenario_id
-        GROUP BY s.id
+        GROUP BY s.id, uc.total_users
         ORDER BY s.id
         """
     ).fetchall()
@@ -638,10 +643,17 @@ def user_info(db: sqlite3.Connection, user_id):
     ).fetchone()
     ended_scenarios = db.execute(
         """
-        SELECT s.*, ph.current_scene_id, ph.is_completed,
-            (SELECT scene_id FROM scenes WHERE scenario_id = s.id ORDER BY scene_id LIMIT 1) as first_scene_id
+        WITH first_scenes AS (
+            SELECT DISTINCT scenario_id, scene_id as first_scene_id
+            FROM scenes
+            GROUP BY scenario_id
+            ORDER BY scenario_id, scene_id
+        )
+        SELECT s.*, ph.current_scene_id, ph.is_completed, fs.first_scene_id
         FROM scenarios s
-        LEFT JOIN play_history ph ON s.id = ph.scenario_id AND ph.is_completed AND ph.user_id = ?
+        LEFT JOIN play_history ph ON s.id = ph.scenario_id AND ph.user_id = ?
+        LEFT JOIN first_scenes fs ON s.id = fs.scenario_id
+        ORDER BY s.id
         """,
         (user_id,),
     ).fetchall()
@@ -675,12 +687,12 @@ def user_review(db: sqlite3.Connection, user_id, scenario_id):
     # 選択履歴を取得
     selection_history = db.execute(
         """
-        SELECT sh.*, s.scene_id, s.text as scene_text, s.image as image, sel.text as selection_text
+        SELECT s.scene_id s.text as scene_text, s.image, sel.text as selection_text
         FROM selection_history sh
         JOIN scenes s ON sh.scene_id = s.id
         JOIN selections sel ON sh.selection_id = sel.id
         WHERE sh.play_history_id = ?
-        ORDER BY sh.id
+        ORDER BY sh.created_at, sh.id
         """,
         (play_history["id"],),
     ).fetchall()
@@ -758,10 +770,17 @@ def logout():
 def scenario_list(db: sqlite3.Connection):
     scenarios = db.execute(
         """
-        SELECT s.*, ph.current_scene_id, ph.is_completed,
-            (SELECT scene_id FROM scenes WHERE scenario_id = s.id ORDER BY scene_id LIMIT 1) as first_scene_id
+        WITH first_scenes AS (
+            SELECT DISTINCT scenario_id, scene_id as first_scene_id
+            FROM scenes
+            GROUP BY scenario_id
+            ORDER BY scenario_id, scene_id
+        )
+        SELECT s.*, ph.current_scene_id, ph.is_completed, fs.first_scene_id
         FROM scenarios s
         LEFT JOIN play_history ph ON s.id = ph.scenario_id AND ph.user_id = ?
+        LEFT JOIN first_scenes fs ON s.id = fs.scenario_id
+        ORDER BY s.id
         """,
         (session["user_id"],),
     ).fetchall()
@@ -855,7 +874,7 @@ def play_scenario(db: sqlite3.Connection, scenario_id):
 
     # 選択肢を取得
     selections = db.execute(
-        "SELECT * FROM selections WHERE scene_id = ?",
+        "SELECT * FROM selections WHERE scene_id = ? ORDER BY id",
         (current_scene["id"],),
     ).fetchall()
 
@@ -903,7 +922,8 @@ def make_selection(db: sqlite3.Connection, scenario_id, selection_id):
 
     # 次のシーンの情報を取得
     next_ids = db.execute(
-        "SELECT next_id FROM next_scenes WHERE selection_id = ?", (selection_id,)
+        "SELECT next_id FROM next_scenes WHERE selection_id = ? ORDER BY id",
+        (selection_id,),
     ).fetchall()
     next_ids = list(map(lambda x: x["next_id"], next_ids))
     next_id = random.choice(next_ids)
@@ -960,7 +980,7 @@ def show_ending(db: sqlite3.Connection, scenario_id):
 
     # 選択肢を取得
     selections = db.execute(
-        "SELECT * FROM selections WHERE scene_id = ?",
+        "SELECT * FROM selections WHERE scene_id = ? ORDER BY id",
         (current_scene["id"],),
     ).fetchall()
 
@@ -994,12 +1014,12 @@ def show_review(db: sqlite3.Connection, scenario_id):
     # 選択履歴を取得
     selection_history = db.execute(
         """
-        SELECT sh.*, s.scene_id, s.text as scene_text, s.image as image, sel.text as selection_text
+        SELECT s.scene_id s.text as scene_text, s.image, sel.text as selection_text
         FROM selection_history sh
         JOIN scenes s ON sh.scene_id = s.id
         JOIN selections sel ON sh.selection_id = sel.id
         WHERE sh.play_history_id = ?
-        ORDER BY sh.id
+        ORDER BY sh.created_at, sh.id
         """,
         (play_history["id"],),
     ).fetchall()

@@ -75,6 +75,12 @@ python app.py scenario1.json scenario2.json -d mydata.db -p 8080
 text_adventure_engine.exe scenario1.json scenario2.json -d mydata.db -p 8080
 ```
 
+## 管理者画面
+
+v0.2.0より管理者画面(/admin)が追加されました</br>
+管理者画面からユーザやシナリオの追加が行えます
+
+
 ## シナリオデータの定義
 
 json形式でシナリオを定義できます
