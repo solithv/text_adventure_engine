@@ -642,6 +642,8 @@ def user_info(db: sqlite3.Connection, user_id):
             (SELECT scene_id FROM scenes WHERE scenario_id = s.id ORDER BY scene_id LIMIT 1) as first_scene_id
         FROM scenarios s
         LEFT JOIN play_history ph ON s.id = ph.scenario_id AND ph.is_completed AND ph.user_id = ?
+        GROUP BY s.id
+        ORDER BY s.id
         """,
         (user_id,),
     ).fetchall()
@@ -762,6 +764,8 @@ def scenario_list(db: sqlite3.Connection):
             (SELECT scene_id FROM scenes WHERE scenario_id = s.id ORDER BY scene_id LIMIT 1) as first_scene_id
         FROM scenarios s
         LEFT JOIN play_history ph ON s.id = ph.scenario_id AND ph.user_id = ?
+        GROUP BY s.id
+        ORDER BY s.id
         """,
         (session["user_id"],),
     ).fetchall()
@@ -855,7 +859,7 @@ def play_scenario(db: sqlite3.Connection, scenario_id):
 
     # 選択肢を取得
     selections = db.execute(
-        "SELECT * FROM selections WHERE scene_id = ?",
+        "SELECT * FROM selections WHERE scene_id = ? ORDER BY id",
         (current_scene["id"],),
     ).fetchall()
 
@@ -903,7 +907,8 @@ def make_selection(db: sqlite3.Connection, scenario_id, selection_id):
 
     # 次のシーンの情報を取得
     next_ids = db.execute(
-        "SELECT next_id FROM next_scenes WHERE selection_id = ?", (selection_id,)
+        "SELECT next_id FROM next_scenes WHERE selection_id = ? ORDER BY id",
+        (selection_id,),
     ).fetchall()
     next_ids = list(map(lambda x: x["next_id"], next_ids))
     next_id = random.choice(next_ids)
@@ -960,7 +965,7 @@ def show_ending(db: sqlite3.Connection, scenario_id):
 
     # 選択肢を取得
     selections = db.execute(
-        "SELECT * FROM selections WHERE scene_id = ?",
+        "SELECT * FROM selections WHERE scene_id = ? ORDER BY id",
         (current_scene["id"],),
     ).fetchall()
 
