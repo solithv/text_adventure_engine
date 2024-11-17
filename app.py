@@ -475,6 +475,48 @@ def import_scenario(db: sqlite3.Connection, scenario_json):
     return scenario_data["title"]
 
 
+@transact(app.config["ARGS"].database)
+def get_review(db: sqlite3.Connection, user_id, scenario_id):
+    # シナリオ情報を取得
+    scenario = db.execute(
+        "SELECT * FROM scenarios WHERE id = ?",
+        (scenario_id,),
+    ).fetchone()
+
+    # プレイ履歴を取得
+    play_history = db.execute(
+        """
+        SELECT * FROM play_history
+        WHERE user_id = ? AND scenario_id = ?
+        """,
+        (user_id, scenario_id),
+    ).fetchone()
+
+    # 選択履歴を取得
+    selection_history = db.execute(
+        """
+        SELECT s.scene_id, s.text as scene_text, s.image, sel.text as selection_text
+        FROM selection_history sh
+        JOIN scenes s ON sh.scene_id = s.id
+        JOIN selections sel ON sh.selection_id = sel.id
+        WHERE sh.play_history_id = ?
+        ORDER BY sh.created_at, sh.id
+        """,
+        (play_history["id"],),
+    ).fetchall()
+
+    ending = db.execute(
+        """
+        SELECT s.*, sc.title as scenario_title
+        FROM scenes s
+        JOIN scenarios sc ON s.scenario_id = sc.id
+        WHERE s.scenario_id = ? AND s.scene_id = ?
+        """,
+        (scenario_id, play_history["current_scene_id"]),
+    ).fetchone()
+    return scenario, selection_history, ending
+
+
 @app.route("/")
 def index():
     if "user_id" in session:
@@ -668,44 +710,7 @@ def user_review(db: sqlite3.Connection, user_id, scenario_id):
     user = db.execute(
         "SELECT id, username FROM users WHERE id= ?", (user_id,)
     ).fetchone()
-
-    # シナリオ情報を取得
-    scenario = db.execute(
-        "SELECT * FROM scenarios WHERE id = ?",
-        (scenario_id,),
-    ).fetchone()
-
-    # プレイ履歴を取得
-    play_history = db.execute(
-        """
-        SELECT * FROM play_history
-        WHERE user_id = ? AND scenario_id = ?
-        """,
-        (user_id, scenario_id),
-    ).fetchone()
-
-    # 選択履歴を取得
-    selection_history = db.execute(
-        """
-        SELECT s.scene_id s.text as scene_text, s.image, sel.text as selection_text
-        FROM selection_history sh
-        JOIN scenes s ON sh.scene_id = s.id
-        JOIN selections sel ON sh.selection_id = sel.id
-        WHERE sh.play_history_id = ?
-        ORDER BY sh.created_at, sh.id
-        """,
-        (play_history["id"],),
-    ).fetchall()
-
-    ending = db.execute(
-        """
-        SELECT s.*, sc.title as scenario_title
-        FROM scenes s
-        JOIN scenarios sc ON s.scenario_id = sc.id
-        WHERE s.scenario_id = ? AND s.scene_id = ?
-        """,
-        (scenario_id, play_history["current_scene_id"]),
-    ).fetchone()
+    scenario, selection_history, ending = get_review(user_id, scenario_id)
 
     return render_template(
         "review.html",
@@ -994,45 +999,8 @@ def show_ending(db: sqlite3.Connection, scenario_id):
 
 @app.route("/play/<int:scenario_id>/review")
 @login_required
-@transact(app.config["ARGS"].database)
-def show_review(db: sqlite3.Connection, scenario_id):
-    # シナリオ情報を取得
-    scenario = db.execute(
-        "SELECT * FROM scenarios WHERE id = ?",
-        (scenario_id,),
-    ).fetchone()
-
-    # プレイ履歴を取得
-    play_history = db.execute(
-        """
-        SELECT * FROM play_history
-        WHERE user_id = ? AND scenario_id = ?
-        """,
-        (session["user_id"], scenario_id),
-    ).fetchone()
-
-    # 選択履歴を取得
-    selection_history = db.execute(
-        """
-        SELECT s.scene_id s.text as scene_text, s.image, sel.text as selection_text
-        FROM selection_history sh
-        JOIN scenes s ON sh.scene_id = s.id
-        JOIN selections sel ON sh.selection_id = sel.id
-        WHERE sh.play_history_id = ?
-        ORDER BY sh.created_at, sh.id
-        """,
-        (play_history["id"],),
-    ).fetchall()
-
-    ending = db.execute(
-        """
-        SELECT s.*, sc.title as scenario_title
-        FROM scenes s
-        JOIN scenarios sc ON s.scenario_id = sc.id
-        WHERE s.scenario_id = ? AND s.scene_id = ?
-        """,
-        (scenario_id, play_history["current_scene_id"]),
-    ).fetchone()
+def show_review(scenario_id):
+    scenario, selection_history, ending = get_review(session["user_id"], scenario_id)
 
     return render_template(
         "review.html",
